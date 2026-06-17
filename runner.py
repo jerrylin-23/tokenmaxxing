@@ -136,20 +136,32 @@ def daemon(args: argparse.Namespace) -> None:
 
 
 def launch_agent_plist(label: str, host: str, port: int, allowed_hosts: list[str], allowed_origins: list[str], transport: str = "streamable-http") -> str:
-    runner_path = Path(__file__).resolve()
-    venv_python = runner_path.parent / ".venv" / "bin" / "python"
-    python_path = venv_python if venv_python.exists() else Path(sys.executable).resolve()
-    args = [
-        str(python_path),
-        str(runner_path),
-        "daemon",
-        "--transport",
-        transport,
-        "--host",
-        host,
-        "--port",
-        str(port),
-    ]
+    if getattr(sys, "frozen", False):
+        args = [
+            sys.executable,
+            "daemon",
+            "--transport",
+            transport,
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
+    else:
+        runner_path = Path(__file__).resolve()
+        venv_python = runner_path.parent / ".venv" / "bin" / "python"
+        python_path = venv_python if venv_python.exists() else Path(sys.executable).resolve()
+        args = [
+            str(python_path),
+            str(runner_path),
+            "daemon",
+            "--transport",
+            transport,
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
     for allowed_host in allowed_hosts:
         args.extend(["--allowed-host", allowed_host])
     for allowed_origin in allowed_origins:

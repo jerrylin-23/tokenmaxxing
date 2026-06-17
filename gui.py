@@ -1106,4 +1106,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    subcommands = {"gui", "daemon", "grant", "status", "revoke", "install-launchagent", "uninstall-launchagent", "execute"}
+    if len(sys.argv) > 1 and sys.argv[1] in subcommands:
+        import runner
+        runner.main()
+    else:
+        main()
