@@ -145,7 +145,10 @@ class Api:
                 "http://127.0.0.1:8000/mcp",
                 method="POST",
                 data=b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}',
-                headers={"Content-Type": "application/json"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                }
             )
             with urllib.request.urlopen(req, timeout=1.5) as conn:
                 return conn.status == 200
