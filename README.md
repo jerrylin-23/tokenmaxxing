@@ -41,10 +41,10 @@ ChatGPT Web  ──(Tailscale Funnel)──>  Local MCP server  ──writes─�
 
 ## 📦 Installation
 
-Requires Python 3.10+ and [Tailscale](https://tailscale.com/download) (installed, logged in, with **MagicDNS + HTTPS** and **Funnel** enabled for the node).
+Requires Python 3.10+.
 
 ```bash
-git clone https://github.com/<you>/tokenmaxxing.git
+git clone https://github.com/jerrylin-23/tokenmaxxing.git
 cd tokenmaxxing
 python3 -m venv .venv
 source .venv/bin/activate
@@ -57,7 +57,50 @@ Launch the GUI:
 tokenmaxxing gui          # or: python runner.py gui
 ```
 
-> **Packaged `.app`:** The PyInstaller spec (`Tokenmaxxing.spec`) predates the pywebview rewrite and needs `pywebview` hidden imports before it will bundle correctly — building the standalone app is a known TODO.
+> **Packaged `.app`:** To run the standalone packaged application, you can build the executable and bundle it using `pyinstaller Tokenmaxxing.spec` followed by `./make_dmg.sh` to package it into a ready-to-use macOS DMG file (`dist/Tokenmaxxing.dmg`).
+
+---
+
+## ⛑️ Tailscale & Funnel Configuration Guide
+
+Tokenmaxxing uses **Tailscale Funnel** to securely expose the local MCP daemon to the public internet so that ChatGPT Web can communicate with it. Follow these steps to configure your machine:
+
+### 1. Install & Authenticate Tailscale
+If you don't have Tailscale installed, install the CLI version and log in:
+```bash
+# Install Tailscale on macOS:
+brew install --cask tailscale
+
+# Start Tailscale and log in:
+tailscale up
+```
+
+### 2. Enable MagicDNS and HTTPS Certificates
+ChatGPT Web requires custom MCP connectors to use secure `https://` URLs. 
+1. Open your [Tailscale DNS Admin Console](https://login.tailscale.com/admin/dns).
+2. Ensure **MagicDNS** is enabled.
+3. Scroll down to **HTTPS Certificates** and click **Enable**.
+
+### 3. Grant Funnel Node Attributes in ACL Policy
+By default, Tailscale nodes cannot expose public Funnels. You must grant permission in the Tailscale Access Control Policy:
+1. Open your [Tailscale ACL Policy Editor](https://login.tailscale.com/admin/acls/file).
+2. Add the `"funnel"` attribute node capability to your policy. For example:
+   ```json
+   "nodeAttrs": [
+       {
+           "target": ["*"],
+           "attr": ["funnel"],
+       }
+   ]
+   ```
+   *(For details, see the [Tailscale Funnel Documentation](https://tailscale.com/kb/1223/funnel)).*
+
+### 4. Verify Setup
+You can verify that Funnel is enabled on your machine by running:
+```bash
+tailscale funnel status
+```
+If you start the service via the Tokenmaxxing GUI, the application will automatically perform these pre-flight checks and notify you if anything is missing.
 
 ---
 
