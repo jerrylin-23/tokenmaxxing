@@ -23,8 +23,9 @@ def draw_diamond(size):
         (cx - r, cy)       # Left
     ]
     
-    # Color #00ff9d (RGB: 0, 255, 157) matching the GUI's brand color
-    draw.polygon(vertices, fill=(0, 255, 157, 255))
+    # White diamond with a black border/outline
+    border_width = max(1, int(canvas_size * 0.04))
+    draw.polygon(vertices, fill=(255, 255, 255, 255), outline=(0, 0, 0, 255), width=border_width)
     
     # Downsample using high-quality Lanczos filter
     img = img.resize((size, size), Image.Resampling.LANCZOS)
