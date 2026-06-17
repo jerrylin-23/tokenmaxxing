@@ -122,23 +122,17 @@ def revoke(_: argparse.Namespace) -> None:
 
 
 def daemon(args: argparse.Namespace) -> None:
-    cmd = [
-        sys.executable,
-        str(Path(__file__).with_name("server.py")),
-        "--transport",
-        args.transport,
-        "--host",
-        args.host,
-        "--port",
-        str(args.port),
-    ]
-    for allowed_host in args.allowed_host:
-        cmd.extend(["--allowed-host", allowed_host])
-    for allowed_origin in args.allowed_origin:
-        cmd.extend(["--allowed-origin", allowed_origin])
-    print(f"[Daemon] {' '.join(cmd)}")
+    import server
+    # Strip the 'daemon' command from sys.argv so server's parser works correctly
+    new_args = [sys.argv[0]]
+    if len(sys.argv) > 2:
+        # Keep everything after the 'daemon' subcommand
+        idx = sys.argv.index("daemon")
+        new_args.extend(sys.argv[idx+1:])
+    sys.argv = new_args
+    print(f"[Daemon] Starting MCP server directly in-process...")
     sys.stdout.flush()
-    os.execv(cmd[0], cmd)
+    server.main()
 
 
 def launch_agent_plist(label: str, host: str, port: int, allowed_hosts: list[str], allowed_origins: list[str], transport: str = "streamable-http") -> str:

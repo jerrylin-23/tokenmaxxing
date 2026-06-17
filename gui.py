@@ -108,6 +108,25 @@ class Api:
         return True
 
     # ---- service controls -------------------------------------------
+    def _get_runner_cmd(self, subcommand, *args):
+        if getattr(sys, "frozen", False):
+            return [sys.executable, subcommand] + list(args)
+        else:
+            return [sys.executable, str(REPO_DIR / "runner.py"), subcommand] + list(args)
+
+    def _daemon_healthy(self):
+        try:
+            req = urllib.request.Request(
+                "http://127.0.0.1:8000/mcp",
+                method="POST",
+                data=b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}',
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=1.5) as conn:
+                return conn.status == 200
+        except Exception:
+            return False
+
     def start_service(self):
         if not self.workspace or not Path(self.workspace).is_dir():
             return {"ok": False, "error": f"Workspace directory does not exist:\n{self.workspace}"}
@@ -128,21 +147,182 @@ class Api:
         self._log("[GUI] Tailscale Funnel is enabled for this node.")
 
         self.is_transitioning = True
-        self._log(f"[GUI] Launching orchestrator: {self.workspace}")
-        env = os.environ.copy()
-        env["TM_WORKSPACE"] = self.workspace
-        env["TM_TUNNEL"] = "tailscale"
-        env["TM_TTL"] = self.ttl
-        threading.Thread(target=self._run_stream,
-                         args=([str(DEMO_SH), "start"], str(REPO_DIR), env), daemon=True).start()
+        threading.Thread(target=self._start_service_thread, daemon=True).start()
         return {"ok": True}
+
+    def _start_service_thread(self):
+        try:
+            self._log("\n[GUI] Starting handoff service...")
+            
+            # 1. Unload conflicting LaunchAgent if active
+            uid = os.getuid()
+            label = "io.jerrylin.tokenmaxxing"
+            plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+            try:
+                res = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
+                if label in res.stdout:
+                    self._log(f"[GUI] Evicting always-on LaunchAgent ({label}) for the session...")
+                    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True)
+                    subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
+                    time.sleep(1)
+            except Exception as e:
+                self._log(f"[Warning] Failed to check/unload LaunchAgent: {e}")
+            
+            # 2. Start MCP Daemon
+            if self._daemon_healthy():
+                self._log("[GUI] Reusing daemon already healthy on 127.0.0.1:8000.")
+            else:
+                self._log("[GUI] Starting MCP daemon (streamable-http) on 127.0.0.1:8000...")
+                cmd = self._get_runner_cmd("daemon", "--transport", "streamable-http", "--host", "127.0.0.1", "--port", "8000")
+                RUN_DIR.mkdir(parents=True, exist_ok=True)
+                daemon_log_path = RUN_DIR / "daemon.log"
+                with open(daemon_log_path, "w") as f:
+                    proc = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
+                (RUN_DIR / "daemon.pid").write_text(str(proc.pid))
+                
+                healthy = False
+                for _ in range(30):
+                    if self._daemon_healthy():
+                        healthy = True
+                        break
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.5)
+                
+                if healthy:
+                    self._log("[GUI] Daemon healthy (local /mcp responding).")
+                else:
+                    self._log(f"[Error] Daemon startup failed. Check logs at {daemon_log_path}")
+                    self.is_transitioning = False
+                    self._emit("window.refreshStatus && window.refreshStatus()")
+                    return
+            
+            # 3. Enable Tailscale funnel
+            ts = self._resolve_tailscale()
+            if not ts:
+                self._log("[Error] Tailscale binary not found.")
+                self.is_transitioning = False
+                self._emit("window.refreshStatus && window.refreshStatus()")
+                return
+                
+            try:
+                res = subprocess.run([ts, "status", "--json"], capture_output=True, text=True, timeout=3)
+                data = json.loads(res.stdout or "{}")
+                dns_name = (data.get("Self", {}) or {}).get("DNSName", "").rstrip(".")
+                if not dns_name:
+                    self._log("[Error] Could not determine MagicDNS name.")
+                    self.is_transitioning = False
+                    self._emit("window.refreshStatus && window.refreshStatus()")
+                    return
+            except Exception as e:
+                self._log(f"[Error] Failed to read Tailscale status: {e}")
+                self.is_transitioning = False
+                self._emit("window.refreshStatus && window.refreshStatus()")
+                return
+
+            self._log(f"[GUI] Enabling Tailscale Funnel for 127.0.0.1:8000 on {dns_name}...")
+            try:
+                res = subprocess.run([ts, "funnel", "--bg", "8000"], capture_output=True, text=True, timeout=15)
+                if res.returncode != 0:
+                    self._log(f"[Error] Tailscale funnel failed: {res.stderr or res.stdout}")
+                    self.is_transitioning = False
+                    self._emit("window.refreshStatus && window.refreshStatus()")
+                    return
+            except Exception as e:
+                self._log(f"[Error] Failed to start Tailscale funnel: {e}")
+                self.is_transitioning = False
+                self._emit("window.refreshStatus && window.refreshStatus()")
+                return
+                
+            # 4. Grant workspace
+            self._log(f"[GUI] Granting workspace {self.workspace} for {self.ttl}...")
+            grant_cmd = self._get_runner_cmd("grant", self.workspace, "--ttl", self.ttl)
+            res = subprocess.run(grant_cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                self._log(f"[Error] Failed to grant workspace: {res.stderr or res.stdout}")
+                self.is_transitioning = False
+                self._emit("window.refreshStatus && window.refreshStatus()")
+                return
+                
+            # 5. Verify public endpoint
+            url = f"https://{dns_name}/mcp"
+            (RUN_DIR / "connector_url").write_text(url)
+            self._log(f"[GUI] Tunnel URL: {url}")
+            self._log("[GUI] Verifying public MCP handshake...")
+            
+            handshake_ok = False
+            for attempt in range(1, 7):
+                probe = self._probe_tunnel(url)
+                if probe.get("state") == "green":
+                    handshake_ok = True
+                    self._log(f"[GUI] Public handshake OK (attempt {attempt}).")
+                    break
+                time.sleep(3)
+                
+            if not handshake_ok:
+                self._log("[Warning] Public handshake did not succeed. Tunnel is active but handshake check failed.")
+            
+            self._log("[GUI] Service successfully started!")
+            self._log("============================================================")
+            self._log(f" ChatGPT custom connector URL: {url}")
+            self._log(f" Workspace: {self.workspace} (TTL {self.ttl})")
+            self._log("============================================================")
+            
+        except Exception as e:
+            self._log(f"[Error] Start service failed: {e}")
+        finally:
+            self.is_transitioning = False
+            self._emit("window.refreshStatus && window.refreshStatus()")
 
     def stop_service(self):
         self.is_transitioning = True
-        self._log("\n[GUI] Halting local daemon and tunnels…")
-        threading.Thread(target=self._run_stream,
-                         args=([str(DEMO_SH), "stop"], str(REPO_DIR), None), daemon=True).start()
+        threading.Thread(target=self._stop_service_thread, daemon=True).start()
         return {"ok": True}
+
+    def _stop_service_thread(self):
+        try:
+            self._log("\n[GUI] Stopping tunnel and daemon...")
+            
+            # 1. Revoke grant
+            self._log("[GUI] Revoking workspace grant...")
+            cmd = self._get_runner_cmd("revoke")
+            subprocess.run(cmd, capture_output=True)
+            
+            # 2. Turn off funnel
+            self._log("[GUI] Disabling Tailscale funnel...")
+            ts = self._resolve_tailscale()
+            if ts:
+                subprocess.run([ts, "funnel", "--https=443", "off"], capture_output=True, timeout=5)
+                
+            # 3. Stop daemon
+            pid_file = RUN_DIR / "daemon.pid"
+            if pid_file.exists():
+                try:
+                    pid = int(pid_file.read_text().strip())
+                    self._log(f"[GUI] Stopping daemon process (PID {pid})...")
+                    os.kill(pid, 15)
+                    time.sleep(0.5)
+                    os.kill(pid, 9)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        pid_file.unlink()
+                    except Exception:
+                        pass
+            
+            try:
+                (RUN_DIR / "connector_url").unlink()
+            except Exception:
+                pass
+                
+            self._log("[GUI] Service stopped.")
+            
+        except Exception as e:
+            self._log(f"[Error] Stop service failed: {e}")
+        finally:
+            self.is_transitioning = False
+            self._emit("window.refreshStatus && window.refreshStatus()")
 
     def run_agent(self):
         agent = self.agent
@@ -481,6 +661,13 @@ class Api:
     def _launch_agent_terminal(self, agent, workspace, python_bin, runner):
         if sys.platform != "darwin":
             return False
+        if getattr(sys, "frozen", False):
+            exec_cmd = (f"{shlex.quote(sys.executable)} execute "
+                        f"--agent {shlex.quote(agent)} --workspace {shlex.quote(workspace)} --interactive")
+        else:
+            exec_cmd = (f"{shlex.quote(python_bin)} {shlex.quote(runner)} execute "
+                        f"--agent {shlex.quote(agent)} --workspace {shlex.quote(workspace)} --interactive")
+            
         script = "\n".join([
             "#!/bin/bash",
             f"cd {shlex.quote(workspace)} || exit 1",
@@ -490,8 +677,7 @@ class Api:
             'echo "The agent starts on .tokenmaxxing/plan.md — keep working with it here."',
             'echo "------------------------------------------------------------"',
             "echo",
-            (f"{shlex.quote(python_bin)} {shlex.quote(runner)} execute "
-             f"--agent {shlex.quote(agent)} --workspace {shlex.quote(workspace)} --interactive"),
+            exec_cmd,
             "status=$?",
             "echo",
             'echo "[Tokenmaxxing] Agent session ended (exit $status). This window stays open."',
