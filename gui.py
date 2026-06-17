@@ -136,14 +136,24 @@ class Api:
         ok, err, turl = self._verify_tailscale()
         if not ok:
             self._log(f"[GUI] Tailscale verification failed: {err.splitlines()[0]}")
-            return {"ok": False, "setup": {"message": err, "url": turl, "kind": "tailscale"}}
+            return {"ok": False, "setup": {
+                "message": err,
+                "url": turl,
+                "kind": "tailscale",
+                "installed": self._resolve_tailscale() is not None
+            }}
         self._log("[GUI] Tailscale is active and running.")
 
         self._log("[GUI] Verifying Tailscale Funnel is enabled…")
         f_ok, f_msg, f_url = self._verify_funnel()
         if not f_ok:
             self._log(f"[GUI] Funnel not ready: {f_msg.splitlines()[0]}")
-            return {"ok": False, "setup": {"message": f_msg, "url": f_url, "kind": "funnel"}}
+            return {"ok": False, "setup": {
+                "message": f_msg,
+                "url": f_url,
+                "kind": "funnel",
+                "installed": True
+            }}
         self._log("[GUI] Tailscale Funnel is enabled for this node.")
 
         self.is_transitioning = True
@@ -1055,15 +1065,19 @@ function showSetup(s){
   document.getElementById('mtitle').textContent = s.kind==='funnel' ? 'Funnel setup required' : 'Tailscale setup required';
   document.getElementById('mbody').textContent = s.message;
   const foot=document.getElementById('mfoot'); foot.innerHTML='';
-  const fix=mkbtn('Set up with '+S.agent+'  ↗', true);
-  fix.onclick=()=>{ hideModal(); pywebview.api.fix_setup(s.message); };
-  foot.append(fix);
+  if(!s.installed){
+    const fix=mkbtn('Set up with '+S.agent+'  ↗', true);
+    fix.onclick=()=>{ hideModal(); pywebview.api.fix_setup(s.message); };
+    foot.append(fix);
+  }
   if(s.url){
     const open=mkbtn('Open admin page', false); open.onclick=()=>pywebview.api.open_url(s.url);
     const copy=mkbtn('Copy link', false); copy.onclick=()=>navigator.clipboard.writeText(s.url);
     foot.append(copy, open);
   }
-  const close=mkbtn('Close', false); close.onclick=hideModal; foot.append(close);
+  const close=mkbtn(s.installed ? 'OK' : 'Close', !!s.installed);
+  close.onclick=hideModal;
+  foot.append(close);
   document.getElementById('overlay').classList.add('show');
 }
 function hideModal(){ document.getElementById('overlay').classList.remove('show'); }
