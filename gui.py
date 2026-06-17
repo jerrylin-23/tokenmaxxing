@@ -16,6 +16,9 @@ from pathlib import Path
 import webview
 
 RUN_DIR = Path(tempfile.gettempdir()) / "tokenmaxxing-demo"
+TAILSCALE_APP = "/Applications/Tailscale.app"
+TAILSCALE_APP_BIN = f"{TAILSCALE_APP}/Contents/MacOS/Tailscale"
+_GUI_LOCK = None
 
 if getattr(sys, "frozen", False):
     # Packaged build: locate the repo root (with demo.sh) relative to the executable.
@@ -37,6 +40,28 @@ TTLS = ["1h", "2h", "4h", "8h", "12h", "24h"]
 def _venv_python():
     venv = REPO_DIR / ".venv" / "bin" / "python"
     return str(venv) if venv.exists() else sys.executable
+
+
+def _claim_gui_instance():
+    """Prevent accidental app relaunch loops from opening endless GUI windows."""
+    global _GUI_LOCK
+    if sys.platform != "darwin":
+        return True
+    try:
+        import fcntl
+        RUN_DIR.mkdir(parents=True, exist_ok=True)
+        lock = open(RUN_DIR / "gui.lock", "w", encoding="utf-8")
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock.seek(0)
+        lock.truncate()
+        lock.write(str(os.getpid()))
+        lock.flush()
+        _GUI_LOCK = lock
+        return True
+    except BlockingIOError:
+        return False
+    except Exception:
+        return True
 
 
 class Api:
@@ -140,7 +165,7 @@ class Api:
                 "message": err,
                 "url": turl,
                 "kind": "tailscale",
-                "installed": self._resolve_tailscale() is not None
+                "installed": self._tailscale_installed()
             }}
         self._log("[GUI] Tailscale is active and running.")
 
@@ -349,7 +374,17 @@ class Api:
     def start_tailscale(self):
         ts = self._resolve_tailscale()
         if not ts:
-            return {"ok": False, "error": "Tailscale binary not found."}
+            if self._tailscale_app_installed():
+                self._log("\n[GUI] Opening Tailscale for sign-in…")
+                try:
+                    subprocess.run(["open", "-a", "Tailscale"], capture_output=True, text=True, timeout=5)
+                    return {
+                        "ok": False,
+                        "error": "Opened the Tailscale app. Sign in there, then press Start again.",
+                    }
+                except Exception as exc:
+                    return {"ok": False, "error": f"Could not open Tailscale: {exc}"}
+            return {"ok": False, "error": "Tailscale CLI not found."}
         self._log("\n[GUI] Attempting to start Tailscale (running 'tailscale up')…")
         try:
             res = subprocess.run([ts, "up"], capture_output=True, text=True, timeout=8)
@@ -546,12 +581,19 @@ class Api:
 
     # ---- tailscale / funnel -----------------------------------------
     def _resolve_tailscale(self):
+        # Only return the CLI. The app bundle executable is a GUI launcher on
+        # macOS, and running it like `tailscale up` can trigger relaunch loops.
         for p in (shutil.which("tailscale"), "/usr/local/bin/tailscale",
-                  "/opt/homebrew/bin/tailscale",
-                  "/Applications/Tailscale.app/Contents/MacOS/Tailscale"):
+                  "/opt/homebrew/bin/tailscale"):
             if p and os.path.exists(p):
                 return p
         return None
+
+    def _tailscale_app_installed(self):
+        return os.path.exists(TAILSCALE_APP) or os.path.exists(TAILSCALE_APP_BIN)
+
+    def _tailscale_installed(self):
+        return self._resolve_tailscale() is not None or self._tailscale_app_installed()
 
     def _verify_tailscale(self):
         ts = self._resolve_tailscale()
@@ -1140,6 +1182,8 @@ window.addEventListener('pywebviewready', async ()=>{
 
 
 def main():
+    if not _claim_gui_instance():
+        return
     api = Api()
     window = webview.create_window(
         "Tokenmaxxing Control Center",
