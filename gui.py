@@ -346,6 +346,24 @@ class Api:
         self._spawn_agent(self.agent, confirmed=True)
         return {"ok": True}
 
+    def start_tailscale(self):
+        ts = self._resolve_tailscale()
+        if not ts:
+            return {"ok": False, "error": "Tailscale binary not found."}
+        self._log("\n[GUI] Attempting to start Tailscale (running 'tailscale up')…")
+        try:
+            res = subprocess.run([ts, "up"], capture_output=True, text=True, timeout=8)
+            if res.returncode == 0:
+                self._log("[GUI] Tailscale started successfully.")
+                return {"ok": True}
+            else:
+                error_msg = (res.stderr or res.stdout or "").strip()
+                self._log(f"[GUI] 'tailscale up' failed: {error_msg}")
+                return {"ok": False, "error": error_msg}
+        except Exception as e:
+            self._log(f"[GUI] Error running 'tailscale up': {e}")
+            return {"ok": False, "error": str(e)}
+
     def fix_setup(self, problem):
         """Launch the selected CLI agent in a Terminal to help fix Tailscale setup,
         seeded with the detected problem and the target Funnel configuration."""
@@ -1069,13 +1087,30 @@ function showSetup(s){
     const fix=mkbtn('Set up with '+S.agent+'  ↗', true);
     fix.onclick=()=>{ hideModal(); pywebview.api.fix_setup(s.message); };
     foot.append(fix);
+  } else if(s.kind === 'tailscale'){
+    const startBtn = mkbtn('⚡ Start Tailscale', true);
+    startBtn.onclick = async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = 'Starting…';
+      const res = await pywebview.api.start_tailscale();
+      if(res && res.ok){
+        hideModal();
+        onToggle();
+      } else {
+        startBtn.disabled = false;
+        startBtn.textContent = '⚡ Start Tailscale';
+        showModal('Error starting Tailscale', res.error || 'Unknown error');
+      }
+    };
+    foot.append(startBtn);
   }
   if(s.url){
     const open=mkbtn('Open admin page', false); open.onclick=()=>pywebview.api.open_url(s.url);
     const copy=mkbtn('Copy link', false); copy.onclick=()=>navigator.clipboard.writeText(s.url);
     foot.append(copy, open);
   }
-  const close=mkbtn(s.installed ? 'OK' : 'Close', !!s.installed);
+  const isPrimaryClose = !(!s.installed || s.kind === 'tailscale');
+  const close=mkbtn(s.installed ? 'OK' : 'Close', isPrimaryClose);
   close.onclick=hideModal;
   foot.append(close);
   document.getElementById('overlay').classList.add('show');
