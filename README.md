@@ -116,8 +116,28 @@ If you start the service via the Tokenmaxxing GUI, the application will automati
 ### 1. Start the service
 Open the app, pick your workspace, click **Start handoff service**. Tokenmaxxing runs the Tailscale + Funnel pre-flight, starts the local MCP server, and shows a stable connector URL with a countdown timer.
 
-### 2. Connect ChatGPT Web
-Copy the connector URL (e.g. `https://<your-machine>.<tailnet>.ts.net/mcp`) and add it as a custom action/connector in ChatGPT Web.
+### 2. Connect ChatGPT Web (Developer Mode)
+
+To connect ChatGPT Web to your local Tokenmaxxing daemon, you must enable **Developer Mode** in your ChatGPT settings and register the connector:
+
+#### Step A: Enable Developer Mode in ChatGPT
+1. Go to [chatgpt.com](https://chatgpt.com) and log in.
+2. Click on your profile settings (gear icon or menu in the bottom-left or top-right corner) and select **Settings**.
+3. Navigate to the **Apps** (or **Connectors**) section.
+4. Locate the **Developer mode** toggle and turn it **ON** (Enabled).
+
+#### Step B: Register the Tokenmaxxing Connector
+1. In the same **Apps** settings window, click **Add App** or **Create app**.
+2. Configure the application with the following details:
+   - **Name:** `Tokenmaxxing` (or a name of your choice).
+   - **Server URL:** Paste the Funnel URL shown in the Tokenmaxxing GUI (e.g., `https://<your-machine>.<tailnet>.ts.net/mcp`). *Make sure the URL ends with `/mcp`.*
+3. Select **No Authentication** (or trust the provider if prompted).
+4. Click **Create** / **Save**.
+
+#### Step C: Enable the Connector in your Chat
+1. Start a new conversation on ChatGPT.
+2. Click the **App/Connector** icon in the text input bar (or use the `@` menu / tool selector depending on the current ChatGPT UI layout) and verify that the **Tokenmaxxing** connector is checked/enabled.
+
 
 ### 3. Generate the plan (web)
 Ask ChatGPT to inspect the workspace and write the plan:
