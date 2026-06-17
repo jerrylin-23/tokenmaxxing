@@ -99,10 +99,10 @@ class Api:
 
     def set_workspace(self, path):
         if path:
-            self.workspace = path
-            self._save_last_workspace(path)
+            self.workspace = str(Path(path).expanduser().resolve())
+            self._save_last_workspace(self.workspace)
             self._plan_signature = None
-        return {"workspace": self.workspace}
+        return {"workspace": self.workspace, "plan": self.get_plan_md()}
 
     def set_agent(self, agent):
         if agent in AGENTS:
@@ -125,12 +125,12 @@ class Api:
             res = None
         if res:
             path = res[0] if isinstance(res, (list, tuple)) else res
-            self.workspace = path
-            self._save_last_workspace(path)
+            self.workspace = str(Path(path).expanduser().resolve())
+            self._save_last_workspace(self.workspace)
             self._plan_signature = None
-            self._log(f"[GUI] Selected workspace: {path}")
-            return {"workspace": path, "plan": self.get_plan_md()}
-        return {"workspace": self.workspace}
+            self._log(f"[GUI] Selected workspace: {self.workspace}")
+            return {"workspace": self.workspace, "plan": self.get_plan_md()}
+        return {"workspace": self.workspace, "plan": self.get_plan_md()}
 
     def open_url(self, url):
         if url:
@@ -1114,6 +1114,9 @@ function renderMarkdown(md){
 }
 async function loadPlan(){
   const p = await pywebview.api.get_plan_md();
+  applyPlan(p);
+}
+function applyPlan(p){
   const host = document.getElementById('plan');
   if(p.missing){ host.innerHTML='<div class="empty">No plan.md in this workspace.</div>'; return; }
   if(p.error){ host.innerHTML='<div class="empty" style="color:var(--red)">Could not read plan: '+esc(p.error)+'</div>'; return; }
@@ -1129,9 +1132,14 @@ async function runAgent(){
   }
 }
 
-function onWsChange(){ pywebview.api.set_workspace(document.getElementById('ws').value).then(loadPlan); }
+async function onWsChange(){
+  const r = await pywebview.api.set_workspace(document.getElementById('ws').value);
+  if(r.workspace){ document.getElementById('ws').value=r.workspace; S.workspace=r.workspace; }
+  if(r.plan){ applyPlan(r.plan); } else { await loadPlan(); }
+}
 async function browse(){ const r = await pywebview.api.browse_workspace();
-  if(r.workspace){ document.getElementById('ws').value=r.workspace; loadPlan(); } }
+  if(r.workspace){ document.getElementById('ws').value=r.workspace; S.workspace=r.workspace; }
+  if(r.plan){ applyPlan(r.plan); } else { await loadPlan(); } }
 function copyUrl(){ if(S.url){ navigator.clipboard.writeText(S.url); const b=document.getElementById('copybtn'); b.textContent='Copied'; setTimeout(()=>b.textContent='Copy',1200);} }
 function toggleTerm(){ S.new_terminal=!S.new_terminal; document.getElementById('termchk').classList.toggle('on',S.new_terminal);
   document.getElementById('termchk').querySelector('.b').textContent=S.new_terminal?'✓':''; pywebview.api.set_new_terminal(S.new_terminal); }
