@@ -1,0 +1,19 @@
+[project]
+name = "tokenmaxxing"
+version = "0.1.0"
+description = "A local MCP handoff daemon for scoped web planning and local CLI agent execution"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=0.1.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.22.0",
+    "pywebview>=5.0",
+]
+
+[project.scripts]
+tokenmaxxing = "runner:main"
+tokenmaxxing-server = "server:main"
+
+[tool.setuptools]
+py-modules = ["server", "runner", "gui"]

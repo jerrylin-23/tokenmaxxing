@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build / packaging artifacts
+build/
+dist/
+*.app/
+*.dmg
+
+# Local runtime state (normally lives in ~/.tokenmaxxing)
+.tokenmaxxing/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
