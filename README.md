@@ -6,15 +6,16 @@ Tokenmaxxing runs a local MCP server, exposes it over a stable **Tailscale Funne
 
 ---
 
-## 💡 Why this exists
+## 💡 The "Rate-Limit Arbitrage" (Why this exists)
 
-AI-assisted coding is most effective when you separate **design (planning)** from **construction (execution)**. The name *Tokenmaxxing* is about maximizing your AI budget:
+Tokenmaxxing leverages a powerful rate-limit arbitrage: **ChatGPT Web usage limits are completely separate from developer API limits (like those used by Codex and local CLI agents).**
 
-1. **Ideation is token-heavy.** Brainstorming and architecture take long, open-ended conversations.
-2. **Web and API limits are separate.** When ChatGPT Web reads files and writes `.tokenmaxxing/plan.md` through the connector, it runs under your *ChatGPT* usage limits — **zero developer-API credits**.
-3. **Execution is cheap and local.** You only spend developer-API tokens on the final pass, when the local agent reads the pre-compiled plan and implements it.
-4. **Security stays local.** The web planner gets a time-limited, read-only workspace grant; code modification and shell execution happen locally, under your control.
-5. **Stable URL.** Tailscale Funnel gives a connector URL that stays constant across restarts — paste it into ChatGPT once.
+Since most developers don't code directly inside a web browser, we split the workflow:
+1. **Design & Planning on the Web (Free/Flat-Rate):** Brainstorming, analyzing codebase context, and architecting solutions are token-heavy operations. By exposing your workspace via Tailscale Funnel to ChatGPT Web, the web planner can read your workspace files and write a comprehensive plan to `.tokenmaxxing/plan.md` using your flat-rate web subscription—**consuming zero developer-API credits**.
+2. **Local Execution (Cheap & Fast):** Once the heavy design lift is complete, you use your favorite local CLI agents (such as Antigravity, Claude Code, or Codex) to execute the plan. The local agents only need to process the pre-compiled plan and implement the code, keeping developer API costs extremely low.
+3. **Local Control & Security:** The web planner only gets time-limited, read-only access to write the plan. File writes, command execution, and code modifications happen locally on your machine, under your supervision.
+
+---
 
 ```
 ChatGPT Web  ──(Tailscale Funnel)──>  Local MCP server  ──writes──>  .tokenmaxxing/plan.md
