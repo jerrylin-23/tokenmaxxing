@@ -856,6 +856,16 @@ body{
 .bigbtn .ico{font-size:13px;line-height:1}
 .connector{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
 .clabel{font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:var(--tx-faint)}
+.help-tooltip-container{position:relative;display:inline-block;cursor:pointer}
+.help-trigger{display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);color:var(--tx-dim);font-size:8px;font-weight:bold;text-align:center;user-select:none;transition:all .15s ease}
+.help-tooltip-container:hover .help-trigger{background:var(--raise);color:var(--tx);border-color:var(--line-2)}
+.help-tooltip{visibility:hidden;opacity:0;width:320px;background:var(--panel);border:1px solid var(--line-2);color:var(--tx-dim);text-align:left;border-radius:12px;padding:14px;position:absolute;z-index:100;top:calc(100% + 8px);left:0;box-shadow:0 10px 25px -5px rgba(0,0,0,.5),0 8px 10px -6px rgba(0,0,0,.5);transition:opacity .2s,visibility .2s;pointer-events:none;line-height:1.5;text-transform:none;letter-spacing:normal;font-weight:normal}
+.help-tooltip-container:hover .help-tooltip{visibility:visible;opacity:1;pointer-events:auto}
+.help-tooltip h3{color:var(--tx);font-size:11px;font-weight:500;margin-bottom:8px;border-bottom:1px solid var(--line);padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.help-tooltip ol{padding-left:14px;margin:0}
+.help-tooltip li{margin-bottom:6px;font-size:11px}
+.help-tooltip li:last-child{margin-bottom:0}
+.help-tooltip strong{color:var(--tx)}
 .crow{display:flex;align-items:center;gap:8px}
 .curl{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--line);
   border-radius:9px;padding:9px 12px;font-size:12px;color:var(--tx-dim);
@@ -965,7 +975,23 @@ body{
   <div class="command">
     <button class="bigbtn" id="toggle" onclick="onToggle()"><span class="ico">⏻</span><span id="togglelabel">Start handoff service</span></button>
     <div class="connector">
-      <div class="clabel">ChatGPT connector URL</div>
+      <div class="clabel" style="display:flex;align-items:center;gap:6px">
+        <span>ChatGPT connector URL</span>
+        <div class="help-tooltip-container">
+          <span class="help-trigger">?</span>
+          <div class="help-tooltip">
+            <h3>How to connect to ChatGPT</h3>
+            <ol>
+              <li>Go to <strong>Settings → Apps</strong> in ChatGPT Web.</li>
+              <li>Toggle <strong>Developer mode</strong> to <strong>Enabled</strong>.</li>
+              <li>Click <strong>Add App</strong> or <strong>Create app</strong>.</li>
+              <li>Enter Name and set Server URL to this connector URL (ends with <code>/mcp</code>).</li>
+              <li>Select <strong>No Authentication</strong> and click Create.</li>
+              <li>Enable the <strong>Tokenmaxxing</strong> connector in a new chat.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
       <div class="crow">
         <div class="curl mono" id="curl">—</div>
         <button class="iconbtn" id="copybtn" onclick="copyUrl()" disabled>Copy</button>
