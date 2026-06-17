@@ -74,9 +74,12 @@ class Api:
         self.ttl = "4h"
         self.new_terminal = True
         self.is_transitioning = False
+        self._plan_signature = None
+        self._plan_watch_started = False
 
     def bind(self, window):
         self.window = window
+        self._start_plan_watcher()
 
     # ---- JS callable -------------------------------------------------
     def init(self):
@@ -98,6 +101,7 @@ class Api:
         if path:
             self.workspace = path
             self._save_last_workspace(path)
+            self._plan_signature = None
         return {"workspace": self.workspace}
 
     def set_agent(self, agent):
@@ -123,8 +127,9 @@ class Api:
             path = res[0] if isinstance(res, (list, tuple)) else res
             self.workspace = path
             self._save_last_workspace(path)
+            self._plan_signature = None
             self._log(f"[GUI] Selected workspace: {path}")
-            return {"workspace": path, "plan": self.get_plan()}
+            return {"workspace": path, "plan": self.get_plan_md()}
         return {"workspace": self.workspace}
 
     def open_url(self, url):
@@ -452,8 +457,41 @@ class Api:
                          daemon=True).start()
 
     # ---- plan document ----------------------------------------------
+    def _plan_file(self):
+        return Path(self.workspace) / ".tokenmaxxing" / "plan.md"
+
+    def _current_plan_signature(self):
+        plan_file = self._plan_file()
+        try:
+            st = plan_file.stat()
+            return (str(plan_file), st.st_mtime_ns, st.st_size)
+        except FileNotFoundError:
+            return (str(plan_file), None, None)
+        except Exception:
+            return (str(plan_file), "error", None)
+
+    def _start_plan_watcher(self):
+        if self._plan_watch_started:
+            return
+        self._plan_watch_started = True
+        self._plan_signature = self._current_plan_signature()
+        threading.Thread(target=self._watch_plan_file, daemon=True).start()
+
+    def _watch_plan_file(self):
+        while True:
+            try:
+                sig = self._current_plan_signature()
+                if self._plan_signature is None:
+                    self._plan_signature = sig
+                elif sig != self._plan_signature:
+                    self._plan_signature = sig
+                    self._emit("window.loadPlan && window.loadPlan()")
+                time.sleep(1)
+            except Exception:
+                time.sleep(2)
+
     def get_plan_md(self):
-        plan_file = Path(self.workspace) / ".tokenmaxxing" / "plan.md"
+        plan_file = self._plan_file()
         if not plan_file.exists():
             return {"text": "", "missing": str(plan_file)}
         try:
