@@ -11,30 +11,37 @@ Tokenmaxxing runs a local MCP server, exposes it over a stable **Tailscale Funne
 Tokenmaxxing leverages a powerful rate-limit arbitrage: **ChatGPT Web usage limits are completely separate from developer API limits (like those used by Codex and local CLI agents).**
 
 Since most developers don't code directly inside a web browser, we split the workflow:
-1. **Design & Planning on the Web (Free/Flat-Rate):** Brainstorming, analyzing codebase context, and architecting solutions are token-heavy operations. By exposing your workspace via Tailscale Funnel to ChatGPT Web, the web planner can read your workspace files and write a comprehensive plan to `.tokenmaxxing/plan.md` using your flat-rate web subscription—**consuming zero developer-API credits**.
+1. **Design & Planning on the Web (Free/Flat-Rate):** Brainstorming, analyzing codebase context, and architecting solutions are token-heavy operations. By exposing your workspace via Tailscale Funnel to ChatGPT Web, the web planner can read your workspace files and write a comprehensive plan to `.tokenmaxxing/plan.md` using your flat-rate web subscription, **consuming zero developer-API credits**.
 2. **Local Execution (Cheap & Fast):** Once the heavy design lift is complete, you use your favorite local CLI agents (such as Antigravity, Claude Code, or Codex) to execute the plan. The local agents only need to process the pre-compiled plan and implement the code, keeping developer API costs extremely low.
 3. **Local Control & Security:** The web planner only gets time-limited, read-only access to write the plan. File writes, command execution, and code modifications happen locally on your machine, under your supervision.
 
 ---
 
 ```
-ChatGPT Web  ──(Tailscale Funnel)──>  Local MCP server  ──writes──>  .tokenmaxxing/plan.md
- (planner: read-only workspace)                                              │
-                                                                             ▼
-                                              Local CLI agent (Antigravity / Claude / Codex)
-                                              reads the plan, edits files, runs tests
+ChatGPT Web
+  planner with read-only workspace access
+  |
+  | Tailscale Funnel
+  v
+Local MCP server
+  writes .tokenmaxxing/plan.md
+  |
+  v
+Local CLI agent
+  Antigravity / Claude / Codex
+  reads the plan, edits files, runs tests
 ```
 
 ---
 
 ## ✨ Features
 
-- **Sleek black desktop GUI** — a native window (rendered with `pywebview`/WebKit): start/stop the service, watch the grant timer, read the live plan, and launch agents.
-- **Stable connector URL** via Tailscale Funnel, with a **pre-flight check** that verifies Tailscale is installed, logged in, and that **Funnel** is actually enabled before starting — and surfaces the exact admin-console link if not.
-- **Agent-assisted setup** — if Tailscale/Funnel isn't configured, one click launches your selected CLI agent in a Terminal, seeded with the detected problem and the steps to fix it.
-- **Interactive execution** — "Run" opens a real Terminal and starts your chosen agent *interactively* on the plan, so you can keep working with it (not a one-shot capture).
-- **Plan reader** — renders `.tokenmaxxing/plan.md` as a formatted document inside the app.
-- **TTL-based grants** — workspaces are exposed for a limited time (e.g. 4h) and auto-lock when the grant expires.
+- **Sleek black desktop GUI:** a native window (rendered with `pywebview`/WebKit) to start/stop the service, watch the grant timer, read the live plan, and launch agents.
+- **Stable connector URL:** Tailscale Funnel support with a **pre-flight check** that verifies Tailscale is installed, logged in, and that **Funnel** is actually enabled before starting, then surfaces the exact admin-console link if not.
+- **Agent-assisted setup:** if Tailscale/Funnel isn't configured, one click launches your selected CLI agent in a Terminal, seeded with the detected problem and the steps to fix it.
+- **Interactive execution:** "Run" opens a real Terminal and starts your chosen agent *interactively* on the plan, so you can keep working with it (not a one-shot capture).
+- **Plan reader:** renders `.tokenmaxxing/plan.md` as a formatted document inside the app.
+- **TTL-based grants:** workspaces are exposed for a limited time (e.g. 4h) and auto-lock when the grant expires.
 - **Tunnel health indicator** and a **service/setup console** for live orchestrator logs.
 
 ---
@@ -119,16 +126,16 @@ Ask ChatGPT to inspect the workspace and write the plan:
 The plan appears in the app's **Handoff plan** panel.
 
 ### 4. Execute the plan (local)
-Pick an agent (`antigravity` / `claude` / `codex`) and click **Run**. A Terminal opens with the agent running interactively on the plan — read, intervene, and keep working with it directly.
+Pick an agent (`antigravity` / `claude` / `codex`) and click **Run**. A Terminal opens with the agent running interactively on the plan, so you can read, intervene, and keep working with it directly.
 
 ---
 
 ## 🔒 Security guardrails
 
-- **Scoped exposure** — only the granted workspace directory is reachable.
-- **Auto-lock TTL** — grants lock automatically when the TTL expires.
-- **Sensitive-file blocklist** — `.env`, `.ssh`, `.aws`, `*.key`, `*.pem`, `.git/config` are blocked.
-- **Ignored folders** — heavy/generated dirs (`node_modules`, `.venv`, `dist`, `build`) are skipped.
+- **Scoped exposure:** only the granted workspace directory is reachable.
+- **Auto-lock TTL:** grants lock automatically when the TTL expires.
+- **Sensitive-file blocklist:** `.env`, `.ssh`, `.aws`, `*.key`, `*.pem`, `.git/config` are blocked.
+- **Ignored folders:** heavy/generated dirs (`node_modules`, `.venv`, `dist`, `build`) are skipped.
 
 ---
 
