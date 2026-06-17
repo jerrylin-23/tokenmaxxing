@@ -45,6 +45,6 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='Tokenmaxxing.app',
-    icon=None,
-    bundle_identifier=None,
+    icon='tokenmaxxing.icns',
+    bundle_identifier='com.tokenmaxxing.app',
 )
