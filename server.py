@@ -124,11 +124,11 @@ def _active_grant() -> tuple[dict | None, str | None]:
     state = _load_state()
     grant = state.get("grant")
     if not grant:
-        return None, "No active workspace grant. Run: tokenmaxxing grant /path/to/repo --ttl 4h"
+        return None, "No active repository/workspace grant. Run: tokenmaxxing grant /path/to/repo --ttl 4h"
 
     expires_at = int(grant.get("expires_at", 0))
     if expires_at <= _now():
-        return None, "Workspace grant expired. Run: tokenmaxxing grant /path/to/repo --ttl 4h"
+        return None, "Repository/workspace grant expired. Run: tokenmaxxing grant /path/to/repo --ttl 4h"
 
     workspace = Path(grant.get("workspace", "")).expanduser().resolve()
     if not workspace.is_dir():
@@ -136,6 +136,25 @@ def _active_grant() -> tuple[dict | None, str | None]:
 
     grant["workspace"] = str(workspace)
     return grant, None
+
+
+def _scope_kind(workspace: str) -> str:
+    return "repository" if (Path(workspace) / ".git").exists() else "workspace"
+
+
+def _scope_summary(workspace: str) -> dict:
+    workspace_path = Path(workspace)
+    kind = _scope_kind(workspace)
+    return {
+        "scope": kind,
+        "name": workspace_path.name,
+        "path_format": "workspace-relative paths only",
+        "instruction": (
+            "Stay inside this granted repository/workspace. Do not request arbitrary "
+            "local machine directories. Use list_workspace_files, then read only paths "
+            "returned by that tool."
+        ),
+    }
 
 
 def _is_ignored_dir(rel_dir: str) -> bool:
@@ -160,7 +179,10 @@ def _is_blocked_path(rel_path: str) -> bool:
 def _resolve_workspace_path(workspace: str, file_path: str) -> tuple[Path | None, str | None]:
     rel_path = Path(file_path)
     if rel_path.is_absolute():
-        return None, "Use workspace-relative paths only."
+        return None, (
+            "Use workspace-relative paths only. This connector is scoped to the granted "
+            "repository/workspace and cannot browse arbitrary local machine directories."
+        )
 
     workspace_path = Path(workspace).resolve()
     target_path = (workspace_path / rel_path).resolve()
@@ -187,15 +209,20 @@ def _agent_command(agent: str, prompt: str) -> list[str] | None:
 
 @mcp.tool()
 def get_status() -> str:
-    """Return daemon lock state and the active workspace grant, if one exists."""
+    """Return lock state for the currently granted repository/workspace.
+
+    The connector is intentionally scoped. Do not ask for arbitrary local machine
+    directories or absolute paths; use list_workspace_files for allowed paths.
+    """
     grant, error = _active_grant()
     if error:
         return json.dumps({"locked": True, "message": error}, indent=2)
 
+    scope = _scope_summary(grant["workspace"])
     return json.dumps(
         {
             "locked": False,
-            "workspace": grant["workspace"],
+            **scope,
             "expires_at": grant["expires_at"],
             "seconds_remaining": grant["expires_at"] - _now(),
             "allow_execute": bool(grant.get("allow_execute", False)),
@@ -206,7 +233,11 @@ def get_status() -> str:
 
 @mcp.tool()
 def list_workspace_files() -> str:
-    """List files in the currently granted workspace, excluding generated and sensitive paths."""
+    """List allowed workspace-relative files in the granted repository/workspace.
+
+    Treat this list as the complete browsing scope. Do not request files or
+    directories outside it.
+    """
     grant, error = _active_grant()
     if error:
         return f"Locked: {error}"
@@ -230,12 +261,22 @@ def list_workspace_files() -> str:
             if not _is_blocked_path(rel_path):
                 files_list.append(rel_path)
 
-    return "\n".join(sorted(files_list)) if files_list else "No files found in workspace."
+    scope = _scope_summary(grant["workspace"])
+    header = (
+        f"Scope: {scope['scope']} '{scope['name']}'.\n"
+        "Use only workspace-relative paths listed below. Do not request arbitrary local directories.\n"
+    )
+    body = "\n".join(sorted(files_list)) if files_list else "No files found in workspace."
+    return header + body
 
 
 @mcp.tool()
 def read_workspace_file(file_path: str) -> str:
-    """Read a file from the currently granted workspace."""
+    """Read one workspace-relative file from the granted repository/workspace.
+
+    Pass only paths returned by list_workspace_files. Absolute paths and paths
+    outside the granted scope are refused.
+    """
     grant, error = _active_grant()
     if error:
         return f"Locked: {error}"
@@ -244,7 +285,7 @@ def read_workspace_file(file_path: str) -> str:
     if error:
         return f"Error: {error}"
     if not target_path.exists() or not target_path.is_file():
-        return f"Error: File not found at {file_path}"
+        return f"Error: File not found in the granted scope: {file_path}. Use list_workspace_files first."
 
     try:
         return target_path.read_text(encoding="utf-8")
