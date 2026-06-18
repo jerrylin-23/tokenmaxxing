@@ -2,6 +2,8 @@
 
 > A sleek, black macOS desktop + CLI portal for agentic handoffs: **plan on ChatGPT Web → execute with your local CLI agent.**
 
+<video src="assets/tokenmaxxing_demo_15x_v3.mp4" width="100%" controls autoplay loop muted></video>
+
 Tokenmaxxing runs a local MCP server, exposes it over a stable **Tailscale Funnel** URL so ChatGPT Web can read your workspace and write an implementation plan, then hands that plan to a local CLI agent (Antigravity / Claude Code / Codex) for execution.
 
 ---
