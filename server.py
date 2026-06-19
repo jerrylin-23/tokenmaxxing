@@ -105,6 +105,22 @@ BLOCKED_SUFFIXES = {
     ".pfx",
 }
 PLAN_PATH = ".tokenmaxxing/plan.md"
+CONTEXT_FILES = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "CONTRIBUTING.md",
+    "package.json",
+    "pyproject.toml",
+    "Cargo.toml",
+    "go.mod",
+    "requirements.txt",
+    "Makefile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+)
+MAX_CONTEXT_FILE_CHARS = 6_000
+MAX_CONTEXT_CHARS = 18_000
 
 
 def _now() -> int:
@@ -150,9 +166,10 @@ def _scope_summary(workspace: str) -> dict:
         "name": workspace_path.name,
         "path_format": "workspace-relative paths only",
         "instruction": (
-            "Stay inside this granted repository/workspace. Do not request arbitrary "
-            "local machine directories. Use list_workspace_files, then read only paths "
-            "returned by that tool."
+            "This connector is a sealed view of the granted repository/workspace. Never "
+            "request, infer, or attempt to access arbitrary local-machine paths. Start with "
+            "get_project_context, then read only workspace-relative paths returned by this "
+            "connector."
         ),
     }
 
@@ -207,6 +224,26 @@ def _agent_command(agent: str, prompt: str) -> list[str] | None:
     return agent_map.get(agent.lower().strip())
 
 
+def _git_context(workspace: Path) -> dict:
+    """Best-effort current repository state, without exposing anything outside scope."""
+    if not (workspace / ".git").exists():
+        return {"repository": False}
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(workspace), "status", "--short", "--branch"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        return {
+            "repository": True,
+            "status": status.stdout.strip() or "(clean working tree)",
+        }
+    except Exception as exc:
+        return {"repository": True, "status_error": str(exc)}
+
+
 @mcp.tool()
 def get_status() -> str:
     """Return lock state for the currently granted repository/workspace.
@@ -226,6 +263,9 @@ def get_status() -> str:
             "expires_at": grant["expires_at"],
             "seconds_remaining": grant["expires_at"] - _now(),
             "allow_execute": bool(grant.get("allow_execute", False)),
+            "next_step": (
+                "Call get_project_context before planning, then read the relevant workspace files."
+            ),
         },
         indent=2,
     )
@@ -264,10 +304,79 @@ def list_workspace_files() -> str:
     scope = _scope_summary(grant["workspace"])
     header = (
         f"Scope: {scope['scope']} '{scope['name']}'.\n"
-        "Use only workspace-relative paths listed below. Do not request arbitrary local directories.\n"
+        "Use only workspace-relative paths listed below. Do not request or attempt access to "
+        "anything outside this granted workspace.\n"
     )
     body = "\n".join(sorted(files_list)) if files_list else "No files found in workspace."
     return header + body
+
+
+@mcp.tool()
+def get_project_context(max_files: int = 250) -> str:
+    """Return a compact, current snapshot of the granted project for web planning.
+
+    Call this before proposing a change. It includes the working-tree state, a
+    safe workspace-relative file map, and the contents of high-signal root
+    instructions/manifests. Then use read_workspace_file for the source files
+    relevant to the requested change. The workspace is the complete access
+    boundary: never request or attempt to access files outside it. This tool
+    never reads ignored, sensitive, or out-of-workspace files.
+    """
+    grant, error = _active_grant()
+    if error:
+        return f"Locked: {error}"
+
+    workspace = Path(grant["workspace"])
+    max_files = max(1, min(max_files, 500))
+    files_list = []
+    for root, dirs, files in os.walk(workspace):
+        rel_root = Path(root).relative_to(workspace).as_posix()
+        if rel_root == ".":
+            rel_root = ""
+        dirs[:] = [
+            directory
+            for directory in dirs
+            if not _is_ignored_dir(f"{rel_root}/{directory}".strip("/"))
+            and not _is_blocked_path(f"{rel_root}/{directory}".strip("/"))
+        ]
+        for file_name in files:
+            rel_path = f"{rel_root}/{file_name}".strip("/")
+            if not _is_blocked_path(rel_path):
+                files_list.append(rel_path)
+
+    files_list.sort()
+    excerpts = {}
+    remaining = MAX_CONTEXT_CHARS
+    for file_name in CONTEXT_FILES:
+        candidate, path_error = _resolve_workspace_path(grant["workspace"], file_name)
+        if path_error or candidate is None or not candidate.is_file() or remaining <= 0:
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        excerpt = text[: min(MAX_CONTEXT_FILE_CHARS, remaining)]
+        if len(excerpt) < len(text):
+            excerpt += "\n\n[truncated: use read_workspace_file for the complete file]"
+        excerpts[file_name] = excerpt
+        remaining -= len(excerpt)
+
+    shown_files = files_list[:max_files]
+    return json.dumps(
+        {
+            **_scope_summary(grant["workspace"]),
+            "git": _git_context(workspace),
+            "files": shown_files,
+            "files_truncated": len(files_list) > len(shown_files),
+            "root_context": excerpts,
+            "next_step": (
+                "Use read_workspace_file on the relevant paths above before making a plan. "
+                "Do not infer implementation details from the file list alone, and do not "
+                "request any local-machine path outside this workspace."
+            ),
+        },
+        indent=2,
+    )
 
 
 @mcp.tool()
