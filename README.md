@@ -145,9 +145,15 @@ To connect ChatGPT Web to your local Tokenmaxxing daemon, you must enable **Deve
 
 ### 3. Generate the plan (web)
 Ask ChatGPT to inspect the workspace and write the plan:
-> *"Read the workspace and write an implementation plan to `.tokenmaxxing/plan.md` to implement [feature]."*
+> *"First call `get_project_context`, then read the source files relevant to [feature]. Write an implementation plan to `.tokenmaxxing/plan.md`."*
 
 The plan appears in the app's **Handoff plan** panel.
+
+`get_project_context` gives the web chat a compact view of the current working
+tree, safe file map, and the root instructions/manifests before it drills into
+the relevant source files. This prevents planning from a blank slate. The
+connector is deliberately a sealed workspace view: do not ask web ChatGPT to
+read arbitrary machine paths, home directories, or sibling repositories.
 
 ### 4. Execute the plan (local)
 Pick an agent (`antigravity` / `claude` / `codex`) and click **Run**. A Terminal opens with the agent running interactively on the plan, so you can read, intervene, and keep working with it directly.
